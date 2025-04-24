@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: 'v0 App',
   description: 'Created with v0',
   generator: 'v0.dev',
+  other: {
+    "google-adsense-account": "ca-pub-7540935582112706",
+  },
 }
 
 export default function RootLayout({
