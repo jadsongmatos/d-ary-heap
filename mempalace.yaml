@@ -1,0 +1,35 @@
+wing: d_ary_heap
+rooms:
+- name: app
+  description: Files from app/
+  keywords:
+  - app
+  - app
+- name: frontend
+  description: Files from components/
+  keywords:
+  - frontend
+  - components
+- name: hooks
+  description: Files from hooks/
+  keywords:
+  - hooks
+  - hooks
+- name: lib
+  description: Files from lib/
+  keywords:
+  - lib
+  - lib
+- name: public
+  description: Files from public/
+  keywords:
+  - public
+  - public
+- name: styles
+  description: Files from styles/
+  keywords:
+  - styles
+  - styles
+- name: general
+  description: Files that don't fit other rooms
+  keywords: []

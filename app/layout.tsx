@@ -2,12 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.dev',
-  other: {
-    "google-adsense-account": "ca-pub-7540935582112706",
-  },
+  title: 'AVL + Heap Indexing — Busca Eficiente em Disco',
+  description: 'Visualização de busca eficiente em disco usando árvore AVL com indexação heap',
 }
 
 export default function RootLayout({

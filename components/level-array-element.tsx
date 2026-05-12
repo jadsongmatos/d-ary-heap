@@ -1,11 +1,12 @@
-import { ArrowDown } from "lucide-react"
+import { ArrowDown, ArrowDownLeft, ArrowDownRight } from "lucide-react"
 
 interface LevelArrayElementProps {
-  value: number
+  value: number | null
   parentValue: number | null
   isHighlighted: boolean
   index: number
   parentHighlighted: boolean
+  isNull?: boolean
 }
 
 export function LevelArrayElement({
@@ -14,7 +15,27 @@ export function LevelArrayElement({
   isHighlighted,
   index,
   parentHighlighted,
+  isNull,
 }: LevelArrayElementProps) {
+  if (isNull || value === null) {
+    return (
+      <div className="flex flex-col items-center">
+        {parentValue !== null && (
+          <div className="flex flex-col items-center mb-1">
+            <div className="flex items-center justify-center w-10 h-10 rounded-md border border-dashed mb-1 bg-muted/30">
+              —
+            </div>
+            <ArrowDown className="h-4 w-4 text-muted-foreground/30" />
+          </div>
+        )}
+        <div className="flex items-center justify-center w-10 h-10 rounded-md border border-dashed bg-muted/30 text-muted-foreground">
+          ∅
+        </div>
+        <div className="text-xs text-muted-foreground/50 mt-1">[{index}]</div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col items-center">
       {parentValue !== null && (
@@ -36,7 +57,7 @@ export function LevelArrayElement({
       >
         {value}
       </div>
-      <div className="text-xs text-muted-foreground mt-1">Index: {index}</div>
+      <div className="text-xs text-muted-foreground mt-1">[{index}]</div>
     </div>
   )
 }

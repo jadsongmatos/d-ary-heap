@@ -1,63 +1,287 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Slider } from "@/components/ui/slider"
-import { useToast } from "@/hooks/use-toast"
 import { Card } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useToast } from "@/hooks/use-toast"
 import { Graphviz } from "@hpcc-js/wasm"
 import { LevelArrayElement } from "./level-array-element"
 
-type HeapType = "min" | "max"
-
-interface HeapNode {
+interface AVLNode {
   value: number
-  x: number
-  y: number
-  highlighted?: boolean
+  left: AVLNode | null
+  right: AVLNode | null
+  height: number
 }
 
-interface LevelArrayElementProps {
-  value: number
-  parentValue: number | null
-  parentIndex: number | null
-  isHighlighted: boolean
+class AVLTree {
+  root: AVLNode | null = null
+
+  private getHeight(node: AVLNode | null): number {
+    return node ? node.height : 0
+  }
+
+  private getBalance(node: AVLNode | null): number {
+    return node ? this.getHeight(node.left) - this.getHeight(node.right) : 0
+  }
+
+  private rotateRight(y: AVLNode): AVLNode {
+    const x = y.left!
+    const t2 = x.right
+    x.right = y
+    y.left = t2
+    y.height = Math.max(this.getHeight(y.left), this.getHeight(y.right)) + 1
+    x.height = Math.max(this.getHeight(x.left), this.getHeight(x.right)) + 1
+    return x
+  }
+
+  private rotateLeft(x: AVLNode): AVLNode {
+    const y = x.right!
+    const t2 = y.left
+    y.left = x
+    x.right = t2
+    x.height = Math.max(this.getHeight(x.left), this.getHeight(x.right)) + 1
+    y.height = Math.max(this.getHeight(y.left), this.getHeight(y.right)) + 1
+    return y
+  }
+
+  private insertNode(node: AVLNode | null, value: number): AVLNode {
+    if (!node) {
+      return { value, left: null, right: null, height: 1 }
+    }
+    if (value < node.value) {
+      node.left = this.insertNode(node.left, value)
+    } else if (value > node.value) {
+      node.right = this.insertNode(node.right, value)
+    } else {
+      return node
+    }
+
+    node.height = Math.max(this.getHeight(node.left), this.getHeight(node.right)) + 1
+    const balance = this.getBalance(node)
+
+    if (balance > 1 && value < node.left!.value) {
+      return this.rotateRight(node)
+    }
+    if (balance < -1 && value > node.right!.value) {
+      return this.rotateLeft(node)
+    }
+    if (balance > 1 && value > node.left!.value) {
+      node.left = this.rotateLeft(node.left!)
+      return this.rotateRight(node)
+    }
+    if (balance < -1 && value < node.right!.value) {
+      node.right = this.rotateRight(node.right!)
+      return this.rotateLeft(node)
+    }
+
+    return node
+  }
+
+  insert(value: number): string[] {
+    const rotations: string[] = []
+    const beforeBalance = this.root ? this.getBalance(this.root) : 0
+    this.root = this.insertNode(this.root, value)
+    const afterBalance = this.root ? this.getBalance(this.root) : 0
+
+    if (Math.abs(beforeBalance) > 1 && Math.abs(afterBalance) <= 1) {
+      rotations.push(`Rotação realizada ao inserir ${value}`)
+    }
+    return rotations
+  }
+
+  levelOrderWithNulls(): (number | null)[] {
+    if (!this.root) return []
+    const result: (number | null)[] = []
+    const queue: (AVLNode | null)[] = [this.root]
+
+    while (queue.length > 0) {
+      const node = queue.shift()!
+      if (node) {
+        result.push(node.value)
+        const hasChildren = node.left !== null || node.right !== null
+        const anyChildHasDescendants = queue.some(
+          (n) => n !== null && (n!.left !== null || n!.right !== null)
+        )
+        if (hasChildren || anyChildHasDescendants || node.left !== null || node.right !== null) {
+          queue.push(node.left)
+          queue.push(node.right)
+        }
+      } else {
+        let hasNonNullAfter = false
+        for (let i = 0; i < queue.length; i++) {
+          if (queue[i] !== null) {
+            hasNonNullAfter = true
+            break
+          }
+        }
+        if (hasNonNullAfter) {
+          result.push(null)
+          queue.push(null)
+          queue.push(null)
+        }
+      }
+    }
+
+    while (result.length > 0 && result[result.length - 1] === null) {
+      result.pop()
+    }
+
+    return result
+  }
+
+  levelOrderLayers(): (number | null)[][] {
+    if (!this.root) return []
+    const layers: (number | null)[][] = []
+    let currentLayer: (AVLNode | null)[] = [this.root]
+
+    while (currentLayer.some((n) => n !== null)) {
+      const values = currentLayer.map((n) => (n ? n.value : null))
+      layers.push(values)
+      const nextLayer: (AVLNode | null)[] = []
+      for (const node of currentLayer) {
+        if (node) {
+          nextLayer.push(node.left)
+          nextLayer.push(node.right)
+        } else {
+          nextLayer.push(null)
+          nextLayer.push(null)
+        }
+      }
+      currentLayer = nextLayer
+    }
+
+    return layers
+  }
+
+  contains(value: number): boolean {
+    let node = this.root
+    while (node) {
+      if (value === node.value) return true
+      if (value < node.value) node = node.left
+      else node = node.right
+    }
+    return false
+  }
+
+  clear() {
+    this.root = null
+  }
+}
+
+interface SearchStep {
+  index: number
+  value: number | null
+  direction: "left" | "right" | "found" | "not_found"
+}
+
+function generateDot(
+  root: AVLNode | null,
+  highlightedValues: Set<number>,
+  searchPath: number[] = []
+): string {
+  if (!root) return 'digraph AVL {\n  node [shape=circle];\n  label="Árvore vazia";\n}\n'
+
+  let dot = 'digraph AVL {\n'
+  dot += '  graph [rankdir=TB, splines=true, nodesep=0.6, ranksep=0.8];\n'
+  dot += '  node [shape=circle, style=filled, fontname="Arial", fixedsize=true, width=0.8];\n'
+  dot += '  edge [arrowhead=none];\n\n'
+
+  const queue: { node: AVLNode | null; index: number }[] = [{ node: root, index: 0 }]
+  const nodeIndices = new Map<number, number>()
+  nodeIndices.set(root.value, 0)
+
+  const levelGroups: { [key: number]: number[] } = {}
+
+  while (queue.length > 0) {
+    const { node, index } = queue.shift()!
+    if (!node) continue
+
+    if (!levelGroups[index]) levelGroups[index] = []
+    levelGroups[index].push(index)
+
+    const isHighlighted = highlightedValues.has(node.value)
+    const isSearchPath = searchPath.includes(node.value)
+    let fillColor = "#e2e8f0"
+    let fontColor = "black"
+    if (isSearchPath) {
+      fillColor = "#16a34a"
+      fontColor = "white"
+    } else if (isHighlighted) {
+      fillColor = "#7c3aed"
+      fontColor = "white"
+    }
+
+    const balance = getBalanceFromNode(node)
+    dot += `  node${index} [label="${node.value}\\n(${balance})", fillcolor="${fillColor}", fontcolor="${fontColor}"];\n`
+
+    if (node.left) {
+      const leftIndex = 2 * index + 1
+      nodeIndices.set(node.left.value, leftIndex)
+      dot += `  node${index} -> node${leftIndex};\n`
+      queue.push({ node: node.left, index: leftIndex })
+    }
+    if (node.right) {
+      const rightIndex = 2 * index + 2
+      nodeIndices.set(node.right.value, rightIndex)
+      dot += `  node${index} -> node${rightIndex};\n`
+      queue.push({ node: node.right, index: rightIndex })
+    }
+  }
+
+  const levels: { [key: number]: number[] } = {}
+  for (const [, idx] of nodeIndices) {
+    const level = Math.floor(Math.log2(idx + 1))
+    if (!levels[level]) levels[level] = []
+    levels[level].push(idx)
+  }
+  for (const level in levels) {
+    if (levels[level].length > 1) {
+      dot += `  { rank=same; ${levels[level].map((i) => `node${i}`).join("; ")}; }\n`
+    }
+  }
+
+  dot += "}\n"
+  return dot
+}
+
+function getBalanceFromNode(node: AVLNode): number {
+  const leftH = node.left ? node.left.height : 0
+  const rightH = node.right ? node.right.height : 0
+  return leftH - rightH
 }
 
 export function HeapVisualizer() {
-  const [d, setD] = useState<number>(2)
-  const [heapType, setHeapType] = useState<HeapType>("min")
-  const [inputValue, setInputValue] = useState<string>("")
-  const [heap, setHeap] = useState<number[]>([])
-  const [dotSource, setDotSource] = useState<string>("")
-  const [svgString, setSvgString] = useState<string>("")
-  const [highlightedNodes, setHighlightedNodes] = useState<number[]>([])
-  const [operationLog, setOperationLog] = useState<string[]>([])
-  const [isGraphvizLoaded, setIsGraphvizLoaded] = useState<boolean>(false)
+  const [avlTree] = useState(() => new AVLTree())
+  const [values, setValues] = useState<number[]>([])
+  const [inputValue, setInputValue] = useState("")
+  const [searchValue, setSearchValue] = useState("")
+  const [dotSource, setDotSource] = useState("")
+  const [svgString, setSvgString] = useState("")
+  const [isGraphvizLoaded, setIsGraphvizLoaded] = useState(false)
   const [graphvizInstance, setGraphvizInstance] = useState<any>(null)
-  const [nodes, setNodes] = useState<HeapNode[]>([])
-  const [edges, setEdges] = useState<{ from: number; to: number }[]>([])
-  const [animationQueue, setAnimationQueue] = useState<{ type: string; data: any }[]>([])
-  const [isAnimating, setIsAnimating] = useState<boolean>(false)
-  const [svgWidth, setSvgWidth] = useState<number>(800)
-  const [svgHeight, setSvgHeight] = useState<number>(500)
-  const [levelArrays, setLevelArrays] = useState<LevelArrayElementProps[][]>([])
-  const svgRef = useRef<SVGSVGElement>(null)
+  const [highlightedValues, setHighlightedValues] = useState<Set<number>>(new Set())
+  const [operationLog, setOperationLog] = useState<string[]>([])
+  const [diskArray, setDiskArray] = useState<(number | null)[]>([])
+  const [traversalLayers, setTraversalLayers] = useState<(number | null)[][]>([])
+  const [currentTraversalLayer, setCurrentTraversalLayer] = useState(-1)
+  const [searchSteps, setSearchSteps] = useState<SearchStep[]>([])
+  const [currentSearchStep, setCurrentSearchStep] = useState(-1)
+  const [isSearching, setIsSearching] = useState(false)
+  const [searchFound, setSearchFound] = useState<boolean | null>(null)
+  const [highlightedArrayIndices, setHighlightedArrayIndices] = useState<Set<number>>(new Set())
   const svgContainerRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
 
-  // Initialize Graphviz
   useEffect(() => {
     const initGraphviz = async () => {
       try {
         const graphviz = await Graphviz.load()
         setGraphvizInstance(graphviz)
         setIsGraphvizLoaded(true)
-        console.log("Graphviz initialized")
       } catch (error) {
         console.error("Failed to initialize Graphviz:", error)
         toast({
@@ -67,529 +291,346 @@ export function HeapVisualizer() {
         })
       }
     }
-
     initGraphviz()
   }, [toast])
 
-  // Calculate SVG dimensions based on container size
-  useEffect(() => {
-    const updateSize = () => {
-      if (svgRef.current) {
-        const container = svgRef.current.parentElement
-        if (container) {
-          setSvgWidth(container.clientWidth)
-          setSvgHeight(Math.max(500, container.clientWidth * 0.6))
-        }
-      }
-    }
-
-    window.addEventListener("resize", updateSize)
-    updateSize()
-
-    return () => window.removeEventListener("resize", updateSize)
+  const addLog = useCallback((message: string) => {
+    setOperationLog((prev) => [message, ...prev.slice(0, 19)])
   }, [])
 
-  // Process animation queue
   useEffect(() => {
-    if (animationQueue.length > 0 && !isAnimating) {
-      setIsAnimating(true)
-      const action = animationQueue[0]
-
-      setTimeout(() => {
-        if (action.type === "highlight") {
-          highlightNode(action.data)
-        } else if (action.type === "swap") {
-          performSwap(action.data.index1, action.data.index2)
-        } else if (action.type === "final") {
-          updateVisualization()
-        }
-
-        setAnimationQueue((prev) => prev.slice(1))
-        setIsAnimating(false)
-      }, 500)
+    if (isGraphvizLoaded && values.length > 0) {
+      updateTreeVisualization()
+    } else if (values.length === 0) {
+      setDotSource("")
+      setSvgString("")
     }
-  }, [animationQueue, isAnimating])
+  }, [values, isGraphvizLoaded, highlightedValues])
 
-  // Update visualization whenever heap changes
-  useEffect(() => {
-    if (isGraphvizLoaded) {
-      updateVisualization()
-    }
-  }, [heap, d, heapType, highlightedNodes, isGraphvizLoaded])
-
-  // Render SVG when dotSource changes
   useEffect(() => {
     if (dotSource && isGraphvizLoaded && graphvizInstance) {
       renderGraphviz()
     }
   }, [dotSource, isGraphvizLoaded, graphvizInstance])
 
-  // Update level arrays visualization
   useEffect(() => {
-    updateLevelArrays()
-  }, [heap, d, highlightedNodes])
-
-  const updateLevelArrays = () => {
-    if (!heap.length) {
-      setLevelArrays([])
-      return
+    if (values.length > 0) {
+      setDiskArray(avlTree.levelOrderWithNulls())
+      setTraversalLayers(avlTree.levelOrderLayers())
+    } else {
+      setDiskArray([])
+      setTraversalLayers([])
     }
+  }, [values, highlightedValues, avlTree])
 
-    // Find the maximum depth by checking each node
-    let maxDepth = 0
-    for (let i = 0; i < heap.length; i++) {
-      const nodeDepth = Math.floor(Math.log((d - 1) * i + 1) / Math.log(d))
-      maxDepth = Math.max(maxDepth, nodeDepth)
-    }
-
-    // Add 1 to maxDepth since depths are 0-indexed
-    maxDepth += 1
-
-    // Initialize the levels array with the correct size
-    const levels: LevelArrayElementProps[][] = Array(maxDepth)
-      .fill(null)
-      .map(() => [])
-
-    // Organize nodes by level
-    for (let i = 0; i < heap.length; i++) {
-      const depth = Math.floor(Math.log((d - 1) * i + 1) / Math.log(d))
-
-      // This should always be true now, but keep as a safety check
-      if (depth >= 0 && depth < levels.length) {
-        const parentIndex = i > 0 ? Math.floor((i - 1) / d) : null
-
-        levels[depth].push({
-          value: heap[i],
-          parentValue: parentIndex !== null ? heap[parentIndex] : null,
-          parentIndex: parentIndex,
-          isHighlighted: highlightedNodes.includes(i),
-        })
-      } else {
-        console.error(`Calculated depth ${depth} is out of bounds for levels array of length ${levels.length}`)
-      }
-    }
-
-    setLevelArrays(levels)
-  }
-
-  const updateVisualization = () => {
-    if (!heap.length) {
-      setDotSource("")
-      setSvgString("")
-      setNodes([])
-      setEdges([])
-      return
-    }
-
-    // Generate DOT language representation of the heap
-    let dot = `digraph D_ary_Heap {\n`
-    dot += `  graph [rankdir=TB, splines=true, nodesep=0.6, ranksep=0.8];\n`
-    dot += `  node [shape=circle, style=filled, fontname="Arial", fixedsize=true, width=0.8];\n`
-    dot += `  edge [arrowhead=none];\n\n`
-
-    // Add nodes
-    for (let i = 0; i < heap.length; i++) {
-      const isHighlighted = highlightedNodes.includes(i)
-      const fillColor = isHighlighted ? "#7c3aed" : heapType === "min" ? "#e2e8f0" : "#e2e8f0"
-      const fontColor = isHighlighted ? "white" : "black"
-      const label = heap[i].toString()
-
-      dot += `  node${i} [label="${label}", fillcolor="${fillColor}", fontcolor="${fontColor}"];\n`
-    }
-
-    dot += "\n"
-
-    // Add edges
-    for (let i = 1; i < heap.length; i++) {
-      const parentIndex = Math.floor((i - 1) / d)
-      dot += `  node${parentIndex} -> node${i};\n`
-    }
-
-    // Group nodes by level for better visualization
-    const levels: { [key: number]: number[] } = {}
-    for (let i = 0; i < heap.length; i++) {
-      const level = Math.floor(Math.log((d - 1) * i + 1) / Math.log(d))
-      if (!levels[level]) {
-        levels[level] = []
-      }
-      levels[level].push(i)
-    }
-
-    // Add rank constraints to ensure nodes at the same level are aligned
-    for (const level in levels) {
-      if (levels[level].length > 1) {
-        dot += `  { rank=same; ${levels[level].map((i) => `node${i}`).join("; ")}; }\n`
-      }
-    }
-
-    dot += "}\n"
+  const updateTreeVisualization = () => {
+    const dot = generateDot(avlTree.root, highlightedValues)
     setDotSource(dot)
-
-    if (!heap.length) {
-      setNodes([])
-      setEdges([])
-      return
-    }
-
-    const newNodes: HeapNode[] = []
-    const newEdges: { from: number; to: number }[] = []
-
-    // Calculate the maximum depth of the heap
-    const getMaxDepth = () => {
-      let size = heap.length
-      let depth = 0
-      while (size > 0) {
-        size = Math.floor((size - 1) / d)
-        depth++
-      }
-      return depth
-    }
-
-    const maxDepth = getMaxDepth()
-    const horizontalSpacing = svgWidth / (Math.pow(d, maxDepth - 1) + 1)
-    const verticalSpacing = svgHeight / (maxDepth + 1)
-
-    // Create nodes with positions
-    for (let i = 0; i < heap.length; i++) {
-      const depth = Math.floor(Math.log(i * (d - 1) + 1) / Math.log(d))
-      const nodesInLevel = Math.pow(d, depth)
-      const levelStartIndex = (Math.pow(d, depth) - 1) / (d - 1)
-      const positionInLevel = i - levelStartIndex
-
-      // Calculate x position to center nodes at each level
-      const levelWidth = nodesInLevel * horizontalSpacing
-      const startX = (svgWidth - levelWidth) / 2 + horizontalSpacing / 2
-      const x = startX + positionInLevel * horizontalSpacing
-      const y = (depth + 1) * verticalSpacing
-
-      newNodes.push({
-        value: heap[i],
-        x,
-        y,
-        highlighted: false,
-      })
-
-      // Create edges from parent to children
-      if (i > 0) {
-        const parentIndex = Math.floor((i - 1) / d)
-        newEdges.push({ from: parentIndex, to: i })
-      }
-    }
-
-    setNodes(newNodes)
-    setEdges(newEdges)
   }
 
   const renderGraphviz = async () => {
     if (!dotSource || !graphvizInstance) return
-
     try {
       const svg = await graphvizInstance.layout(dotSource, "svg", "dot")
       setSvgString(svg)
     } catch (error) {
       console.error("Graphviz layout error:", error)
-      toast({
-        title: "Visualization Error",
-        description: "Failed to generate the heap visualization",
-        variant: "destructive",
-      })
     }
   }
 
-  const addOperationLog = (message: string) => {
-    setOperationLog((prev) => [message, ...prev.slice(0, 9)])
-  }
-
-  const highlightNode = (index: number) => {
-    setNodes((prev) =>
-      prev.map((node, i) => ({
-        ...node,
-        highlighted: i === index,
-      })),
-    )
-  }
-
-  const performSwap = (index1: number, index2: number) => {
-    setHeap((prev) => {
-      const newHeap = [...prev]
-      ;[newHeap[index1], newHeap[index2]] = [newHeap[index2], newHeap[index1]]
-      return newHeap
-    })
-  }
-
-  const insertValue = async () => {
+  const insertValue = () => {
     const value = Number.parseInt(inputValue)
-
     if (isNaN(value)) {
-      toast({
-        title: "Invalid input",
-        description: "Please enter a valid number",
-        variant: "destructive",
-      })
+      toast({ title: "Invalid input", description: "Enter a valid number", variant: "destructive" })
+      return
+    }
+    if (avlTree.contains(value)) {
+      toast({ title: "Duplicate", description: `Value ${value} already exists`, variant: "destructive" })
       return
     }
 
-    // Add the new value to the heap
-    const newHeap = [...heap, value]
-    setHeap(newHeap)
-    addOperationLog(`Inserted value: ${value}`)
-
-    // Heapify up
-    const currentIndex = newHeap.length - 1
-    await animateHeapifyUp(newHeap, currentIndex)
-
+    const rotations = avlTree.insert(value)
+    setValues((prev) => [...prev, value])
+    addLog(`Inserted: ${value}${rotations.length > 0 ? ` (${rotations.join(", ")})` : ""}`)
     setInputValue("")
+    resetSearch()
   }
 
-  const animateHeapifyUp = async (heapArray: number[], startIndex: number) => {
-    let currentIndex = startIndex
-    let parentIndex = Math.floor((currentIndex - 1) / d)
+  const insertMultiple = (nums: number[]) => {
+    for (const v of nums) {
+      if (!avlTree.contains(v)) {
+        avlTree.insert(v)
+      }
+    }
+    setValues([...getInOrderValues(avlTree.root)])
+    addLog(`Batch inserted: [${nums.join(", ")}]`)
+    resetSearch()
+  }
 
-    while (currentIndex > 0) {
-      parentIndex = Math.floor((currentIndex - 1) / d)
+  const getInOrderValues = (node: AVLNode | null): number[] => {
+    if (!node) return []
+    return [...getInOrderValues(node.left), node.value, ...getInOrderValues(node.right)]
+  }
 
-      // Highlight nodes being compared
-      setHighlightedNodes([currentIndex, parentIndex])
+  const generateRandomTree = () => {
+    avlTree.clear()
+    const count = Math.floor(Math.random() * 6) + 5
+    const randomValues = new Set<number>()
+    while (randomValues.size < count) {
+      randomValues.add(Math.floor(Math.random() * 100))
+    }
+    const arr = Array.from(randomValues)
+    for (const v of arr) {
+      avlTree.insert(v)
+    }
+    setValues([...getInOrderValues(avlTree.root)])
+    addLog(`Random tree: [${arr.join(", ")}]`)
+    resetSearch()
+  }
+
+  const clearAll = () => {
+    avlTree.clear()
+    setValues([])
+    setDiskArray([])
+    setTraversalLayers([])
+    setCurrentTraversalLayer(-1)
+    resetSearch()
+    setHighlightedValues(new Set())
+    addLog("Cleared")
+  }
+
+  const resetSearch = () => {
+    setSearchSteps([])
+    setCurrentSearchStep(-1)
+    setIsSearching(false)
+    setSearchFound(null)
+    setHighlightedArrayIndices(new Set())
+    setHighlightedValues(new Set())
+  }
+
+  const animateTraversal = async () => {
+    const layers = avlTree.levelOrderLayers()
+    setTraversalLayers(layers)
+    setCurrentTraversalLayer(-1)
+
+    for (let i = 0; i < layers.length; i++) {
+      setCurrentTraversalLayer(i)
+      const layerValues = layers[i].filter((v) => v !== null) as number[]
+      setHighlightedValues(new Set(layerValues))
       await new Promise((resolve) => setTimeout(resolve, 800))
+    }
 
-      // Check if we need to swap based on heap type
-      const shouldSwap =
-        heapType === "min"
-          ? heapArray[currentIndex] < heapArray[parentIndex]
-          : heapArray[currentIndex] > heapArray[parentIndex]
+    setHighlightedValues(new Set())
+    addLog(`Level traversal: [${avlTree.levelOrderWithNulls().map((v) => (v !== null ? v : "∅")).join(", ")}]`)
+  }
 
-      if (shouldSwap) {
-        // Swap values
-        ;[heapArray[currentIndex], heapArray[parentIndex]] = [heapArray[parentIndex], heapArray[currentIndex]]
-        setHeap([...heapArray])
-        addOperationLog(`Swapped ${heapArray[parentIndex]} and ${heapArray[currentIndex]}`)
+  const performSearch = async () => {
+    const target = Number.parseInt(searchValue)
+    if (isNaN(target)) {
+      toast({ title: "Invalid input", description: "Enter a valid number to search", variant: "destructive" })
+      return
+    }
+    if (values.length === 0) {
+      toast({ title: "Empty tree", description: "Insert values first", variant: "destructive" })
+      return
+    }
 
-        // Move up
-        currentIndex = parentIndex
-        await new Promise((resolve) => setTimeout(resolve, 800))
+    resetSearch()
+    setIsSearching(true)
+
+    const array = avlTree.levelOrderWithNulls()
+    const steps: SearchStep[] = []
+    let index = 0
+    let found = false
+
+    while (index < array.length) {
+      const currentValue = array[index]
+      if (currentValue === null) {
+        steps.push({ index, value: null, direction: "not_found" })
+        break
+      }
+
+      if (target === currentValue) {
+        steps.push({ index, value: currentValue, direction: "found" })
+        found = true
+        break
+      } else if (target < currentValue) {
+        steps.push({ index, value: currentValue, direction: "left" })
+        index = 2 * index + 1
       } else {
-        break
+        steps.push({ index, value: currentValue, direction: "right" })
+        index = 2 * index + 2
       }
     }
 
-    // Clear highlights
-    setHighlightedNodes([])
-  }
-
-  const extractRoot = async () => {
-    if (heap.length === 0) {
-      toast({
-        title: "Empty heap",
-        description: "There are no elements to extract",
-        variant: "destructive",
-      })
-      return
-    }
-
-    // Highlight the root that will be extracted
-    setHighlightedNodes([0])
-    await new Promise((resolve) => setTimeout(resolve, 800))
-
-    const extractedValue = heap[0]
-    addOperationLog(`Extracted ${heapType === "min" ? "minimum" : "maximum"} value: ${extractedValue}`)
-
-    // If this is the last element, just remove it
-    if (heap.length === 1) {
-      setHeap([])
-      setHighlightedNodes([])
-      return
-    }
-
-    // Replace root with the last element and remove the last element
-    const newHeap = [...heap]
-    newHeap[0] = newHeap[newHeap.length - 1]
-    newHeap.pop()
-    setHeap(newHeap)
-
-    // Highlight the new root
-    setHighlightedNodes([0])
-    await new Promise((resolve) => setTimeout(resolve, 800))
-
-    // Heapify down
-    await animateHeapifyDown(newHeap, 0)
-  }
-
-  const animateHeapifyDown = async (heapArray: number[], startIndex: number) => {
-    let currentIndex = startIndex
-
-    while (true) {
-      let bestChildIndex = -1
-
-      // Find the best child among d children
-      for (let i = 1; i <= d; i++) {
-        const childIndex = d * currentIndex + i
-
-        if (childIndex < heapArray.length) {
-          if (
-            bestChildIndex === -1 ||
-            (heapType === "min"
-              ? heapArray[childIndex] < heapArray[bestChildIndex]
-              : heapArray[childIndex] > heapArray[bestChildIndex])
-          ) {
-            bestChildIndex = childIndex
-          }
-        }
+    if (!found && (index >= array.length || array[index] === null)) {
+      if (steps.length === 0 || steps[steps.length - 1].direction !== "not_found") {
+        steps.push({ index, value: null, direction: "not_found" })
       }
-
-      // If no children or heap property is satisfied
-      if (
-        bestChildIndex === -1 ||
-        (heapType === "min"
-          ? heapArray[currentIndex] <= heapArray[bestChildIndex]
-          : heapArray[currentIndex] >= heapArray[bestChildIndex])
-      ) {
-        break
-      }
-
-      // Highlight nodes being compared
-      setHighlightedNodes([currentIndex, bestChildIndex])
-      await new Promise((resolve) => setTimeout(resolve, 800))
-
-      // Swap with the best child
-      ;[heapArray[currentIndex], heapArray[bestChildIndex]] = [heapArray[bestChildIndex], heapArray[currentIndex]]
-      setHeap([...heapArray])
-      addOperationLog(`Swapped ${heapArray[bestChildIndex]} and ${heapArray[currentIndex]}`)
-
-      currentIndex = bestChildIndex
-      await new Promise((resolve) => setTimeout(resolve, 800))
     }
 
-    // Clear highlights
-    setHighlightedNodes([])
-  }
+    setSearchSteps(steps)
 
-  const heapify = async () => {
-    if (heap.length <= 1) return
+    for (let i = 0; i < steps.length; i++) {
+      setCurrentSearchStep(i)
+      const step = steps[i]
+      setHighlightedArrayIndices(new Set([step.index]))
 
-    const newHeap = [...heap]
-    addOperationLog("Starting heapify operation")
+      const pathValues = steps.slice(0, i + 1).map((s) => s.value).filter((v) => v !== null) as number[]
+      setHighlightedValues(new Set(pathValues))
 
-    // Start from the last non-leaf node and heapify down
-    for (let i = Math.floor((newHeap.length - 2) / d); i >= 0; i--) {
-      await animateHeapifyDown(newHeap, i)
+      const dot = generateDot(avlTree.root, new Set(), pathValues)
+      setDotSource(dot)
+
+      await new Promise((resolve) => setTimeout(resolve, 1000))
     }
 
-    addOperationLog("Heapify operation completed")
+    const lastStep = steps[steps.length - 1]
+    setSearchFound(lastStep.direction === "found")
+    setIsSearching(false)
+
+    if (lastStep.direction === "found") {
+      addLog(`Search ${target}: FOUND at index ${lastStep.index}`)
+    } else {
+      addLog(`Search ${target}: NOT FOUND`)
+    }
   }
 
-  const clearHeap = () => {
-    setHeap([])
-    setHighlightedNodes([])
-    setOperationLog([])
-    addOperationLog("Heap cleared")
-  }
-
-  const generateRandomHeap = async () => {
-    const size = Math.floor(Math.random() * 10) + 5 // 5-15 elements
-    const randomHeap = Array.from({ length: size }, () => Math.floor(Math.random() * 100))
-    setHeap(randomHeap)
-    addOperationLog(`Generated random heap with ${size} elements`)
-
-    // Trigger heapify animation
-    setTimeout(async () => {
-      await heapify()
-    }, 800)
-  }
+  const getParentIndex = (i: number): number => Math.floor((i - 1) / 2)
+  const getLeftChildIndex = (i: number): number => 2 * i + 1
+  const getRightChildIndex = (i: number): number => 2 * i + 2
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-4">
-          <div className="flex flex-col space-y-2">
-            <Label htmlFor="d-value">Branching Factor (d): {d}</Label>
-            <Slider
-              id="d-value"
-              min={2}
-              max={5}
-              step={1}
-              value={[d]}
-              onValueChange={(value) => setD(value[0])}
-              className="w-full"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label>Heap Type</Label>
-            <RadioGroup
-              value={heapType}
-              onValueChange={(value) => setHeapType(value as HeapType)}
-              className="flex space-x-4"
-            >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="min" id="min-heap" />
-                <Label htmlFor="min-heap">Min Heap</Label>
+          <Card className="p-4">
+            <h3 className="text-lg font-medium mb-2">1. Construir Árvore AVL</h3>
+            <p className="text-sm text-muted-foreground mb-3">
+              Insira valores para construir uma árvore AVL balanceada.
+            </p>
+            <div className="flex space-x-2 mb-3">
+              <div className="flex-1">
+                <Input
+                  type="number"
+                  placeholder="Valor"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && insertValue()}
+                />
               </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="max" id="max-heap" />
-                <Label htmlFor="max-heap">Max Heap</Label>
-              </div>
-            </RadioGroup>
-          </div>
-
-          <div className="flex space-x-2">
-            <div className="flex-1">
+              <Button onClick={insertValue}>Inserir</Button>
+            </div>
+            <div className="flex space-x-2 mb-3">
               <Input
-                type="number"
-                placeholder="Enter a value"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && insertValue()}
+                placeholder="Ex: 10,20,30 (Enter)"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const nums = (e.target as HTMLInputElement).value
+                      .split(",")
+                      .map((s) => Number.parseInt(s.trim()))
+                      .filter((n) => !isNaN(n))
+                    if (nums.length > 0) insertMultiple(nums)
+                  }
+                }}
               />
             </div>
-            <Button onClick={insertValue}>Insert</Button>
-          </div>
-
-          <div className="flex space-x-2">
-            <Button onClick={extractRoot} variant="outline" className="flex-1">
-              Extract {heapType === "min" ? "Min" : "Max"}
-            </Button>
-            <Button onClick={heapify} variant="outline" className="flex-1">
-              Heapify
-            </Button>
-          </div>
-
-          <div className="flex space-x-2">
-            <Button onClick={generateRandomHeap} variant="secondary" className="flex-1">
-              Random Heap
-            </Button>
-            <Button onClick={clearHeap} variant="destructive" className="flex-1">
-              Clear
-            </Button>
-          </div>
-
-          <Card className="p-4">
-            <h3 className="text-lg font-medium mb-2">Heap Array</h3>
-            <div className="flex flex-wrap gap-2">
-              {heap.length > 0 ? (
-                heap.map((value, index) => (
-                  <div
-                    key={index}
-                    className={`flex items-center justify-center w-10 h-10 rounded-md border ${
-                      highlightedNodes.includes(index) ? "bg-primary text-primary-foreground" : "bg-card"
-                    }`}
-                  >
-                    {value}
-                  </div>
-                ))
-              ) : (
-                <p className="text-muted-foreground">Heap is empty</p>
-              )}
+            <div className="flex space-x-2">
+              <Button onClick={generateRandomTree} variant="secondary" className="flex-1">
+                Aleatório
+              </Button>
+              <Button onClick={clearAll} variant="destructive" className="flex-1">
+                Limpar
+              </Button>
             </div>
           </Card>
 
           <Card className="p-4">
-            <h3 className="text-lg font-medium mb-2">Information</h3>
+            <h3 className="text-lg font-medium mb-2">2. Travessia em Nível</h3>
+            <p className="text-sm text-muted-foreground mb-3">
+              Percorra a árvore camada por camada (BFS) para gerar a ordem de armazenamento.
+            </p>
+            <Button onClick={animateTraversal} className="w-full" disabled={values.length === 0}>
+              Animar Travessia
+            </Button>
+            {currentTraversalLayer >= 0 && (
+              <div className="mt-3">
+                <p className="text-sm font-medium">
+                  Camada atual: {currentTraversalLayer}
+                </p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {traversalLayers.slice(0, currentTraversalLayer + 1).map((layer, li) => (
+                    <span key={li} className="text-xs bg-muted px-2 py-1 rounded">
+                      [{layer.map((v) => (v !== null ? v : "∅")).join(", ")}]
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h3 className="text-lg font-medium mb-2">5. Busca Binária</h3>
+            <p className="text-sm text-muted-foreground mb-3">
+              Busque um valor navegando pela árvore usando indexação heap no array em disco.
+            </p>
+            <div className="flex space-x-2 mb-3">
+              <div className="flex-1">
+                <Input
+                  type="number"
+                  placeholder="Buscar valor"
+                  value={searchValue}
+                  onChange={(e) => setSearchValue(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && performSearch()}
+                />
+              </div>
+              <Button onClick={performSearch} disabled={isSearching || values.length === 0}>
+                Buscar
+              </Button>
+            </div>
+            {searchSteps.length > 0 && (
+              <div className="space-y-1">
+                {searchSteps.map((step, i) => (
+                  <div
+                    key={i}
+                    className={`text-xs p-2 rounded ${
+                      i <= currentSearchStep
+                        ? step.direction === "found"
+                          ? "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200"
+                          : step.direction === "not_found"
+                            ? "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200"
+                            : "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    Índice {step.index}: valor = {step.value ?? "∅"} →{" "}
+                    {step.direction === "found"
+                      ? "Encontrado!"
+                      : step.direction === "not_found"
+                        ? "Não encontrado (posição vazia)"
+                        : step.direction === "left"
+                          ? `${step.value} > alvo → filho esquerdo (índice ${getLeftChildIndex(step.index)})`
+                          : `${step.value} < alvo → filho direito (índice ${getRightChildIndex(step.index)})`}
+                  </div>
+                ))}
+              </div>
+            )}
+            {searchFound !== null && (
+              <p className={`text-sm font-medium mt-2 ${searchFound ? "text-green-600" : "text-red-600"}`}>
+                {searchFound ? `Valor ${searchValue} encontrado!` : `Valor ${searchValue} não encontrado.`}
+              </p>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h3 className="text-lg font-medium mb-2">Informações</h3>
             <ul className="list-disc list-inside text-sm space-y-1">
-              <li>Total nodes: {heap.length}</li>
-              {heap.length > 0 && (
+              <li>Total de nós: {values.length}</li>
+              {values.length > 0 && (
                 <>
-                  <li>Root: {heap[0]}</li>
-                  <li>Height: {Math.floor(Math.log(heap.length) / Math.log(d)) + 1}</li>
+                  <li>Raiz: {diskArray[0] ?? "—"}</li>
+                  <li>Altura: {traversalLayers.length}</li>
+                  <li>Array em disco: {diskArray.length} posições</li>
                 </>
               )}
             </ul>
@@ -597,13 +638,15 @@ export function HeapVisualizer() {
         </div>
 
         <div className="space-y-4">
-          <Tabs defaultValue="visualization">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="visualization">Graphviz</TabsTrigger>
-              <TabsTrigger value="level-arrays">Level Arrays</TabsTrigger>
-              <TabsTrigger value="dot">DOT Source</TabsTrigger>
+          <Tabs defaultValue="avl-tree">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="avl-tree">Árvore AVL</TabsTrigger>
+              <TabsTrigger value="disk-array">Array em Disco</TabsTrigger>
+              <TabsTrigger value="heap-index">Indexação Heap</TabsTrigger>
+              <TabsTrigger value="dot">DOT</TabsTrigger>
             </TabsList>
-            <TabsContent value="visualization" className="p-0">
+
+            <TabsContent value="avl-tree" className="p-0">
               <Card className="p-4 min-h-[400px] flex items-center justify-center overflow-auto">
                 {isGraphvizLoaded ? (
                   svgString ? (
@@ -613,58 +656,123 @@ export function HeapVisualizer() {
                       className="w-full h-full flex items-center justify-center"
                     />
                   ) : (
-                    <p className="text-muted-foreground">Add elements to visualize the heap</p>
+                    <p className="text-muted-foreground">Insira valores para visualizar a árvore AVL</p>
                   )
                 ) : (
-                  <p className="text-muted-foreground">Loading Graphviz...</p>
+                  <p className="text-muted-foreground">Carregando Graphviz...</p>
                 )}
               </Card>
             </TabsContent>
-            <TabsContent value="level-arrays" className="p-0">
+
+            <TabsContent value="disk-array" className="p-0">
               <Card className="p-4 min-h-[400px] overflow-auto">
-                <h3 className="text-lg font-medium mb-4">Level-by-Level Array Representation</h3>
-                {levelArrays.length > 0 ? (
-                  <div className="space-y-6">
-                    {levelArrays.map((level, levelIndex) => (
-                      <div key={levelIndex} className="space-y-2">
-                        <h4 className="text-sm font-medium">Level {levelIndex}</h4>
-                        <div className="flex flex-wrap gap-4">
-                          {level.map((element, elementIndex) => {
-                            const globalIndex = (Math.pow(d, levelIndex) - 1) / (d - 1) + elementIndex
-                            return (
-                              <LevelArrayElement
-                                key={elementIndex}
-                                value={element.value}
-                                parentValue={element.parentValue}
-                                isHighlighted={element.isHighlighted}
-                                index={globalIndex}
-                                parentHighlighted={
-                                  element.parentIndex !== null && highlightedNodes.includes(element.parentIndex)
-                                }
-                              />
-                            )
-                          })}
+                <h3 className="text-lg font-medium mb-2">3. Armazenamento em Disco</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Elementos armazenados em ordem de travessia em nível, com posições nulas para manter a indexação heap.
+                </p>
+                {diskArray.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap gap-2">
+                      {diskArray.map((value, index) => (
+                        <div
+                          key={index}
+                          className={`flex flex-col items-center justify-center w-14 h-14 rounded-md border text-sm ${
+                            highlightedArrayIndices.has(index)
+                              ? searchSteps[currentSearchStep]?.direction === "found"
+                                ? "bg-green-500 text-white border-green-600"
+                                : "bg-primary text-primary-foreground"
+                              : value === null
+                                ? "bg-muted/30 border-dashed text-muted-foreground"
+                                : "bg-card"
+                          }`}
+                        >
+                          <span className="font-mono text-xs text-muted-foreground">[{index}]</span>
+                          <span className="font-bold">{value !== null ? value : "∅"}</span>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p>Pai: (i-1)/2 | Filho esquerdo: 2i+1 | Filho direito: 2i+2</p>
+                      <p>Posições ∅ = null (mantêm a estrutura de indexação)</p>
+                    </div>
                   </div>
                 ) : (
-                  <p className="text-muted-foreground">Add elements to visualize the heap levels</p>
+                  <p className="text-muted-foreground">Construa a árvore para ver o array em disco</p>
                 )}
               </Card>
             </TabsContent>
+
+            <TabsContent value="heap-index" className="p-0">
+              <Card className="p-4 min-h-[400px] overflow-auto">
+                <h3 className="text-lg font-medium mb-2">4. Indexação Heap</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Relações pai-filho usando indexação heap. Cada posição é calculada por aritmética de índices.
+                </p>
+                {diskArray.length > 0 ? (
+                  <div className="space-y-3">
+                    {diskArray.map((value, index) => {
+                      if (value === null) return null
+                      const parentIdx = index > 0 ? getParentIndex(index) : null
+                      const leftIdx = getLeftChildIndex(index)
+                      const rightIdx = getRightChildIndex(index)
+                      const leftVal = leftIdx < diskArray.length ? diskArray[leftIdx] : null
+                      const rightVal = rightIdx < diskArray.length ? diskArray[rightIdx] : null
+                      const parentVal = parentIdx !== null ? diskArray[parentIdx] : null
+
+                      return (
+                        <div
+                          key={index}
+                          className={`flex items-center gap-3 p-2 rounded border text-sm ${
+                            highlightedArrayIndices.has(index) ? "bg-primary/10 border-primary" : "bg-card"
+                          }`}
+                        >
+                          <div className="font-mono font-bold w-8 text-center">{value}</div>
+                          <div className="text-xs text-muted-foreground flex-1">
+                            <span className="font-mono">[{index}]</span>
+                            {parentIdx !== null && parentVal !== null && (
+                              <span className="ml-2">
+                                ↑ pai=[{parentIdx}]:{parentVal}
+                              </span>
+                            )}
+                            {leftVal !== null && (
+                              <span className="ml-2">
+                                ← esq=[{leftIdx}]:{leftVal}
+                              </span>
+                            )}
+                            {rightVal !== null && (
+                              <span className="ml-2">
+                                → dir=[{rightIdx}]:{rightVal}
+                              </span>
+                            )}
+                            {leftVal === null && leftIdx < diskArray.length && (
+                              <span className="ml-2 text-muted-foreground/50">← esq=[{leftIdx}]:∅</span>
+                            )}
+                            {rightVal === null && rightIdx < diskArray.length && (
+                              <span className="ml-2 text-muted-foreground/50">→ dir=[{rightIdx}]:∅</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">Construa a árvore para ver a indexação</p>
+                )}
+              </Card>
+            </TabsContent>
+
             <TabsContent value="dot" className="p-0">
               <Card className="p-4 min-h-[400px]">
                 <pre className="text-xs overflow-auto h-[400px] font-mono">
-                  {dotSource || "// No DOT source generated yet"}
+                  {dotSource || "// Nenhum DOT gerado ainda"}
                 </pre>
               </Card>
             </TabsContent>
           </Tabs>
 
           <Card className="p-4">
-            <h3 className="text-lg font-medium mb-2">Operation Log</h3>
-            <div className="text-sm h-[200px] overflow-y-auto space-y-1">
+            <h3 className="text-lg font-medium mb-2">Log de Operações</h3>
+            <div className="text-sm h-[150px] overflow-y-auto space-y-1">
               {operationLog.length > 0 ? (
                 operationLog.map((log, index) => (
                   <div key={index} className="py-1 border-b last:border-0">
@@ -672,7 +780,7 @@ export function HeapVisualizer() {
                   </div>
                 ))
               ) : (
-                <p className="text-muted-foreground">No operations performed yet</p>
+                <p className="text-muted-foreground">Nenhuma operação realizada</p>
               )}
             </div>
           </Card>
@@ -680,13 +788,24 @@ export function HeapVisualizer() {
       </div>
 
       <Card className="p-4">
-        <h3 className="text-lg font-medium mb-2">About D-ary Heap Level Arrays</h3>
-        <p className="text-sm text-muted-foreground">
-          The Level Arrays visualization shows each level of the heap as a separate array. Each element displays its own
-          value and its parent's value above it with an arrow connecting them. This representation helps visualize how
-          elements at each level relate to their parents, which is particularly useful for understanding the heap
-          property and the parent-child relationships in a D-ary heap structure.
-        </p>
+        <h3 className="text-lg font-medium mb-2">Metodologia: Busca Eficiente em Disco</h3>
+        <div className="text-sm text-muted-foreground space-y-2">
+          <p>
+            <strong>1. Árvore AVL:</strong> Garante balanceamento automático, mantendo a altura mínima (O(log n)).
+          </p>
+          <p>
+            <strong>2. Travessia em Nível:</strong> Percorre a árvore camada por camada (BFS), gerando a ordem de armazenamento.
+          </p>
+          <p>
+            <strong>3. Armazenamento em Disco:</strong> Os elementos são escritos sequencialmente, incluindo posições nulas (∅) para manter a indexação.
+          </p>
+          <p>
+            <strong>4. Indexação Heap:</strong> Pai = (i-1)/2, Filho esquerdo = 2i+1, Filho direito = 2i+2. Permite navegar pela árvore usando apenas aritmética de índices, sem ponteiros.
+          </p>
+          <p>
+            <strong>5. Busca Binária:</strong> Começa na raiz (índice 0). Compara o valor buscado com o nó atual e navega para o filho esquerdo ou direito usando as fórmulas de indexação heap. Complexidade: O(log n).
+          </p>
+        </div>
       </Card>
     </div>
   )
